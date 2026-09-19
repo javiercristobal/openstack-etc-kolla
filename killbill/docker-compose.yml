@@ -1,0 +1,63 @@
+volumes:
+  db:
+
+services:
+  db:
+    image: mariadb:10.11
+    command: 
+      - "--innodb-use-native-aio=0"
+      - "--innodb-flush-log-at-trx-commit=2"
+      - "--sync-binlog=0"
+    volumes:
+      - db:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+    expose:
+      - "3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=1to1anyherzT
+      - MYSQL_DATABASE=killbill
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p1to1anyherzT"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+
+  killbill:
+    image: killbill/killbill:0.24.16
+    # Removed platform: linux/amd64 to allow native ARM pulls if available
+    ports:
+      - "8080:8080"
+    environment:
+      - KILLBILL_DAO_URL=jdbc:mysql://db:3306/killbill
+      - KILLBILL_DAO_USER=root
+      - KILLBILL_DAO_PASSWORD=1to1anyherzT
+      - KILLBILL_CATALOG_URI=SpyCarAdvanced.xml
+      # -Xint bypasses the QEMU multi-threading crash, allowing the API to boot!
+      # Add maxActive=100 (more connections) and connectionTimeout=120000 (wait 2 minutes instead of 11 seconds)
+      - JAVA_OPTS=-Xint -Djava.security.egd=file:/dev/./urandom -Dserver.connectionTimeout=600000 -Dorg.killbill.dao.maxActive=100 -Dorg.killbill.dao.connectionTimeout=120000
+            
+    depends_on:
+      db:
+        condition: service_healthy
+
+  kaui:
+    image: killbill/kaui:4.0.4
+    # Removed platform: linux/amd64 to allow native ARM pulls if available
+    ports:
+      - "9090:8080"
+    environment:
+      - KAUI_CONFIG_DAO_URL=jdbc:mysql://db:3306/kaui
+      - KAUI_CONFIG_DAO_USER=root
+      - KAUI_CONFIG_DAO_PASSWORD=1to1anyherzT
+      - KAUI_KILLBILL_URL=http://killbill:8080
+      # REPLACE the old TieredStopAtLevel line with this:
+      - JAVA_OPTS=-Xint -Djava.security.egd=file:/dev/./urandom
+      # Explicitly set all 3 timeout parameters in seconds (20 minutes)
+      - KILLBILL_TIMEOUT=1200
+      - KILLBILL_CLIENT_TIMEOUT=1200
+      - REQUEST_TIMEOUT=1200
+    depends_on:
+      db:
+        condition: service_healthy
+      killbill:
+        condition: service_started
